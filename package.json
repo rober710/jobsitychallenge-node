@@ -1,0 +1,21 @@
+{
+  "name": "jobsity-challenge-node",
+  "version": "1.0.0",
+  "description": "Jobsity chatbot challenge implemented in Node.js",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Jobsity",
+    "challenge",
+    "chatbot",
+    "node"
+  ],
+  "author": "Roberto Balarezo",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.15.2",
+    "nunjucks": "^3.0.0"
+  }
+}
