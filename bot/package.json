@@ -1,0 +1,20 @@
+{
+  "name": "bot",
+  "version": "1.0.0",
+  "description": "A bot that makes requests to the Yahoo Finance API",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "bot",
+    "yahoo",
+    "finance",
+    "api"
+  ],
+  "author": "Roberto Balarezo",
+  "license": "ISC",
+  "dependencies": {
+    "amqplib": "^0.5.1"
+  }
+}
