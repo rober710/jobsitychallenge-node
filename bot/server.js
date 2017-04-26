@@ -5,19 +5,27 @@
 
 var amqp = require('amqplib');
 
+const defaultOptions = {
+    url: 'amqp://localhost',
+    requestQueueName: 'bot_requests',
+    responseQueueName: 'bot_responses',
+    reconnectRetries: 3
+};
+
 class ServerConnection {
-    constructor(url) {
-        // TODO: Create a config object to pass all this information?
-        this.url = url;
-        this.connection = null;
-        this.requestChannel = null;
-        this.responseChannel = null;
-        this.reconnectRetries = 0;
+    constructor(options) {
+        options = options || {};
+        this._options = Object.assign({}, defaultOptions, options);
+        this._connection = null;
+        this._requestChannel = null;
+        this._responseChannel = null;
+        this._retryCount = 0;
         this._ready = false;
     }
 
     connect() {
-        let promiseConn = amqp.connect(this.url).then((connection) => {
+        console.log(`Connecting to ${this._options.url}...`);
+        let promiseConn = amqp.connect(this._options.url).then((connection) => {
             // Attach error handlers to the connection
             connection.on('error', (err) => {
                 // TODO: Check in which cases this can happen and how to handle them.
@@ -29,14 +37,14 @@ class ServerConnection {
                 this._ready = false;
             });
 
-            console.log('Connected to RabbitMQ.');
-            this.connection = connection;
+            console.log(`Connected to RabbitMQ at ${this._options.url}`);
+            this._connection = connection;
             return connection;
         }, (err) => {
             console.error(err);
-            if (reconnectRetries < 3) {
+            if (this._retryCount < this._reconnectRetries) {
                 console.error("An error occurred while trying to connect to RabbitMQ. Retrying...");
-                this.reconnectRetries++;
+                this._retryCount++;
                 return new Promise((resolve, reject) => {
                     setTimeout(() => {
                         this.connect(url).then(resolve).catch(reject);
@@ -48,20 +56,19 @@ class ServerConnection {
         });
 
         let reqChann = promiseConn.then((connection) => connection.createChannel()).then((channel) => {
-            this.requestChannel = channel;
+            this._requestChannel = channel;
             channel.prefetch(1);
-            return channel.assertQueue('bot_requests').then(() => {
-                channel.consume('bot_requests', this.processMessage, { noAck: true });
-                // TODO: Convert the queue name into a parameter and show it in this informational message.
-                console.log('Waiting for messages in the request queue.');
+            return channel.assertQueue(this._options.requestQueueName).then(() => {
+                channel.consume(this._options.requestQueueName, this.processMessage.bind(this), { noAck: true });
+                console.log(`Ready to receive messages in the ${this._options.requestQueueName} queue.`);
                 return channel;
             });
         });
 
         let resChann = promiseConn.then((connection) => connection.createChannel()).then((channel) => {
-            this.responseChannel = channel;
-            return channel.assertQueue('bot_responses').then(() => {
-                console.log('Connected to the response queue.');
+            this._responseChannel = channel;
+            return channel.assertQueue(this._options.responseQueueName).then(() => {
+                console.log(`Ready to send responses through the ${this._options.responseQueueName} queue.`);
                 return channel;
             });
         });
@@ -76,13 +83,57 @@ class ServerConnection {
             console.log('Server cannot receive requests or send responses at this time.');
             return;
         }
+        // FIXME: Use winston for logging.
+        console.log(`Message (corrId=${message.properties.correlationId}) received by the bot: `
+            + message.content.toString());
+
+        let content = '';
+        try {
+            content = JSON.parse(message.content.toString());
+        } catch (err) {
+            console.error('Error parsing message sent to bot.');
+            console.error(err);
+            this._sendResponse(this._createErrorResponse('Error when deserializing message received by the bot.',
+                'BOT03'), message.properties.correlationId);
+            return;
+        }
+
+        // Messages are expected to be JSON objects, so we can retrieve the type of request being made.
+        if (!content.type) {
+            this._sendResponse(this._createErrorResponse('Message seems to be an invalid JSON object.',
+                'BOT03'), message.properties.correlationId);
+            return;
+        }
+    }
+
+    _sendResponse(content, correlationId) {
+
+    }
+
+    _createErrorResponse(message, code=null) {
+        let responseObj = {error: true, message};
+        if (code) {
+            responseObj.code = code;
+        }
+        return responseObj;
     }
 }
 
-var serverConnection = new ServerConnection('amqp://localhost');
+var serverConnection = new ServerConnection();
 
 function start() {
-    serverConnection.connect().catch((err) => {
+    serverConnection.connect().then(() => {
+        // Temp code to test sending messages through RabbitMQ.
+        let reqChannel = null;
+        let conn = amqp.connect('amqp://localhost').then((connection) => connection.createChannel())
+            .then((channel) => {reqChannel = channel; return channel.assertQueue('bot_requests'); }).then((okData) => {
+                reqChannel.sendToQueue('bot_requests', Buffer.from('Nuevo mensaje áéñ!!', 'utf8'), {
+                    contentType: 'application/json',
+                    contentEncoding: 'UTF-8',
+                    correlationId: 'n'
+                });
+            });
+    }).catch((err) => {
         console.log(err);
         process.exit(1);
     });
