@@ -95,22 +95,22 @@ class BotServer {
         } catch (err) {
             console.error('Error parsing message sent to bot.');
             console.error(err);
-            this._sendResponse(this._createErrorResponse('Error when deserializing message received by the bot.',
+            this._sendResponse(BotServer._createErrorResponse('Error when deserializing message received by the bot.',
                 'BOT01'), message.properties.correlationId);
             return;
         }
 
         // Messages are expected to be JSON objects, so we can retrieve the type of request being made.
         if (!content.type) {
-            this._sendResponse(this._createErrorResponse('Message seems to be an invalid JSON object.',
+            this._sendResponse(BotServer._createErrorResponse('Message seems to be an invalid JSON object.',
                 'BOT01'), message.properties.correlationId);
             return;
         }
 
         // Check if the api adapter contains a handler for the message type received.
-        var commandHandler = adapter[content.type];
+        let commandHandler = adapter[content.type];
         if (!commandHandler) {
-            this._sendResponse(this._createErrorResponse(`Command ${content.type} not recognized.`,
+            this._sendResponse(BotServer._createErrorResponse(`Command ${content.type} not recognized.`,
                 'BOT02'), message.properties.correlationId);
             return;
         }
@@ -120,21 +120,43 @@ class BotServer {
         }).catch((error) => {
             console.error(error);
             if (error instanceof ApiError) {
-                this._sendResponse(this._createErrorResponse(error.message, error.code),
+                this._sendResponse(BotServer._createErrorResponse(error.message, error.code),
                     message.properties.correlationId);
             } else if (error.message) {
-                this._sendResponse(this._createErrorResponse(error.message), message.properties.correlationId);
+                this._sendResponse(BotServer._createErrorResponse(error.message), message.properties.correlationId);
             } else {
-                this._sendResponse(this._createErrorResponse(error), message.properties.correlationId);
+                this._sendResponse(BotServer._createErrorResponse(error), message.properties.correlationId);
             }
         });
     }
 
     _sendResponse(content, correlationId) {
+        if (!this._ready) {
+            console.log('Server cannot send responses at this time.');
+            return;
+        }
+
+        // TODO: Delete this line when implementation is complete and with tests.
         console.log(JSON.stringify(content), correlationId);
+
+        let response = null;
+        try {
+            response = JSON.stringify(content);
+        } catch (err) {
+            console.error(`Could not serialize response for messageId=${correlationId}`);
+            console.error(err);
+            response = BotServer._createErrorResponse('Non serializable response.', 'BOT01');
+        }
+
+        this._responseChannel.sendToQueue(this._options.responseQueueName,
+            Buffer.from(JSON.stringify(response), 'utf8'), {
+                contentType: 'application/json',
+                contentEncoding: 'UTF-8',
+                correlationId: correlationId
+        });
     }
 
-    _createErrorResponse(message, code = null) {
+    static _createErrorResponse(message, code = null) {
         let responseObj = {error: true, message};
         if (code) {
             responseObj.code = code;

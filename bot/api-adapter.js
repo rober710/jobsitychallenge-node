@@ -38,48 +38,34 @@ function stock(companyCode) {
         headers: {'User-Agent': BOT_USER_AGENT_STR}
     };
 
-    return request.get(reqOptions).then((response) => new Promise((resolve, reject) => {
-        xml2js.parseString(response, function (err, content) {
-            if (err) {
-                reject(new ApiError('Error parsing response from server.', 'BOT03', err));
-                return;
-            }
-            resolve(content);
-        });
-    }).then((content) => {
-        // Test to see if the object returned has resources.
-        if (!content.list || !content.list.resources) {
+    return request.get(reqOptions).then((response) => {
+        let doc = et.parse(response);
+        let resource = doc.findall('.//resource');
+
+        if (resource.length === 0) {
             // TODO: convert console.error to a debug using winston.
-            console.error('Invalid response: ' + JSON.stringify(content));
-            throw new ApiError('Unexpected response from Yahoo Api.', 'BOT03');
-        } else if (content.list.resources.length < 1) {
-            // TODO: convert console.error to a debug using winston.
-            console.error('No resources found...: ' + JSON.stringify(content));
+            console.error('No resources found...: ' + response);
             throw new ApiError(`Could not find information for company ${companyCode}.`, 'BOT02');
         }
 
-        let resource = content.list.resources[0].resource[0];
-        let name = null, price = null;
+        let element = resource[0];
+        let nameField = element.findall('field[@name="name"]');
+        let priceField = element.findall('field[@name="price"]');
 
-        // Get the values of the name and price tags of the response.
-        // TODO: Ugly API, try with a element-tree compatible library.
-        for (let field of resource.field) {
-            if (field.$.name === 'name') {
-                name = field._;
-            } else if (field.$.name === 'price') {
-                price = field._;
-            }
+        if (nameField.length === 0 || priceField.length === 0) {
+            // TODO: convert console.error to a debug using winston, and send response text to log.
+            throw new ApiError('Unexpected response from Yahoo Api.', 'BOT03');
         }
 
-        if (!(name || resource)) {
-            throw new ApiError('Stock API returned answer without name or price fields.', 'BOT03');
-        }
+        let name = nameField[0].text;
+        let price = priceField[0].text;
 
         return {
-            companyCode, 'name': name, price: parseFloat(price),
+            companyCode, name, price: parseFloat(price),
             message: `${companyCode} (${name}) quote is \$${price} per share.`, error: false, lang: 'en'
         };
-    })).catch(function (error) {
+
+    }, (error) => {
         throw new ApiError(`Error connecting to the Yahoo Finance API to query information about company ${companyCode}`,
             'BOT03', error);
     });
@@ -119,8 +105,8 @@ function dayRange(args) {
         let doc = et.parse(response);
         let quotes = doc.findall('.//quote');
 
-        if (!quotes) {
-            throw new ApiException('Unexpected response from Yahoo Ranges API.', 'BOT03');
+        if (quotes.length === 0) {
+            throw new ApiError('Unexpected response from Yahoo Ranges API.', 'BOT03');
         }
 
         // This API always returns a result, even when the code is incorrect. We can check if the
@@ -155,10 +141,10 @@ function dayRange(args) {
         }
 
         return {error: false, results};
-    }).catch((err) => {
+    }, (err) => {
         // Wrap exception
         let msg = `Error getting data from Yahoo Finance Ranges API for company ${queryCode}.`;
-        throw new ApiException(msg, code='BOT03');
+        throw new ApiError(msg, code='BOT03');
     });
 }
 
