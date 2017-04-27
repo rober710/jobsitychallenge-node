@@ -4,6 +4,8 @@
  */
 
 var amqp = require('amqplib');
+var adapter = require('./api-adapter');
+var ApiError = require('./errors').ApiError;
 
 const defaultOptions = {
     url: 'amqp://localhost',
@@ -12,7 +14,7 @@ const defaultOptions = {
     reconnectRetries: 3
 };
 
-class ServerConnection {
+class BotServer {
     constructor(options) {
         options = options || {};
         this._options = Object.assign({}, defaultOptions, options);
@@ -23,7 +25,7 @@ class ServerConnection {
         this._ready = false;
     }
 
-    connect() {
+    initialize() {
         console.log(`Connecting to ${this._options.url}...`);
         let promiseConn = amqp.connect(this._options.url).then((connection) => {
             // Attach error handlers to the connection
@@ -47,7 +49,7 @@ class ServerConnection {
                 this._retryCount++;
                 return new Promise((resolve, reject) => {
                     setTimeout(() => {
-                        this.connect(url).then(resolve).catch(reject);
+                        this.initialize(url).then(resolve).catch(reject);
                     }, 500);
                 });
             } else {
@@ -94,23 +96,45 @@ class ServerConnection {
             console.error('Error parsing message sent to bot.');
             console.error(err);
             this._sendResponse(this._createErrorResponse('Error when deserializing message received by the bot.',
-                'BOT03'), message.properties.correlationId);
+                'BOT01'), message.properties.correlationId);
             return;
         }
 
         // Messages are expected to be JSON objects, so we can retrieve the type of request being made.
         if (!content.type) {
             this._sendResponse(this._createErrorResponse('Message seems to be an invalid JSON object.',
-                'BOT03'), message.properties.correlationId);
+                'BOT01'), message.properties.correlationId);
             return;
         }
+
+        // Check if the api adapter contains a handler for the message type received.
+        var commandHandler = adapter[content.type];
+        if (!commandHandler) {
+            this._sendResponse(this._createErrorResponse(`Command ${content.type} not recognized.`,
+                'BOT02'), message.properties.correlationId);
+            return;
+        }
+
+        commandHandler(content.arg || null).then((responseObj) => {
+            this._sendResponse(responseObj, message.properties.correlationId);
+        }).catch((error) => {
+            console.error(error);
+            if (error instanceof ApiError) {
+                this._sendResponse(this._createErrorResponse(error.message, error.code),
+                    message.properties.correlationId);
+            } else if (error.message) {
+                this._sendResponse(this._createErrorResponse(error.message), message.properties.correlationId);
+            } else {
+                this._sendResponse(this._createErrorResponse(error), message.properties.correlationId);
+            }
+        });
     }
 
     _sendResponse(content, correlationId) {
-
+        console.log(JSON.stringify(content), correlationId);
     }
 
-    _createErrorResponse(message, code=null) {
+    _createErrorResponse(message, code = null) {
         let responseObj = {error: true, message};
         if (code) {
             responseObj.code = code;
@@ -119,18 +143,18 @@ class ServerConnection {
     }
 }
 
-var serverConnection = new ServerConnection();
+var server = new BotServer();
 
 function start() {
-    serverConnection.connect().then(() => {
+    server.initialize().then(() => {
         // Temp code to test sending messages through RabbitMQ.
         let reqChannel = null;
         let conn = amqp.connect('amqp://localhost').then((connection) => connection.createChannel())
             .then((channel) => {reqChannel = channel; return channel.assertQueue('bot_requests'); }).then((okData) => {
-                reqChannel.sendToQueue('bot_requests', Buffer.from('Nuevo mensaje áéñ!!', 'utf8'), {
+                reqChannel.sendToQueue('bot_requests', Buffer.from(JSON.stringify({type: 'day_range', arg: 'AAPL'}), 'utf8'), {
                     contentType: 'application/json',
                     contentEncoding: 'UTF-8',
-                    correlationId: 'n'
+                    correlationId: '465464-dfje546w4e31we65w464'
                 });
             });
     }).catch((err) => {
@@ -138,6 +162,16 @@ function start() {
         process.exit(1);
     });
 }
+
+// Setup global error handlers:
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught error detected!', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', function (reason, promise) {
+    console.error('Unhandled rejection detected!', {reason, promise});
+});
 
 if (require.main === module) {
     console.log('Starting server process...');
