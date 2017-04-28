@@ -4,6 +4,7 @@
  */
 
 var amqp = require('amqplib');
+
 var adapter = require('./api-adapter');
 var ApiError = require('./errors').ApiError;
 var logger = require('./logging');

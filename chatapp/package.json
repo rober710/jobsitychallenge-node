@@ -15,7 +15,14 @@
   "author": "Roberto Balarezo",
   "license": "ISC",
   "dependencies": {
+    "bookshelf": "^0.10.3",
     "express": "^4.15.2",
-    "nunjucks": "^3.0.0"
+    "express-session": "^1.15.2",
+    "knex": "^0.12.9",
+    "nunjucks": "^3.0.0",
+    "passport": "^0.3.2",
+    "passport-local": "^1.0.0",
+    "sqlite3": "^3.1.8",
+    "winston": "^2.3.1"
   }
 }

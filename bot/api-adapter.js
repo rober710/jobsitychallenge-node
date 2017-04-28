@@ -5,6 +5,7 @@
 var util = require('util');
 var request = require('request-promise-native');
 var et = require('elementtree');
+
 var ApiError = require('./errors').ApiError;
 var logger = require('./logging');
 
