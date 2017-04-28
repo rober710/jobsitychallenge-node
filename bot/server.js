@@ -6,6 +6,7 @@
 var amqp = require('amqplib');
 var adapter = require('./api-adapter');
 var ApiError = require('./errors').ApiError;
+var logger = require('./logging');
 
 const defaultOptions = {
     url: 'amqp://localhost',
@@ -26,26 +27,26 @@ class BotServer {
     }
 
     initialize() {
-        console.log(`Connecting to ${this._options.url}...`);
+        logger.info(`Connecting to ${this._options.url}...`);
         let promiseConn = amqp.connect(this._options.url).then((connection) => {
             // Attach error handlers to the connection
             connection.on('error', (err) => {
                 // TODO: Check in which cases this can happen and how to handle them.
-                console.error(err);
+                logger.error(err);
             });
 
             connection.on('close', () => {
-                console.info('Connection closed.');
+                logger.info('Connection closed.');
                 this._ready = false;
             });
 
-            console.log(`Connected to RabbitMQ at ${this._options.url}`);
+            logger.info(`Connected to RabbitMQ at ${this._options.url}`);
             this._connection = connection;
             return connection;
         }, (err) => {
-            console.error(err);
+            logger.error(err);
             if (this._retryCount < this._reconnectRetries) {
-                console.error("An error occurred while trying to connect to RabbitMQ. Retrying...");
+                logger.error("An error occurred while trying to connect to RabbitMQ. Retrying...");
                 this._retryCount++;
                 return new Promise((resolve, reject) => {
                     setTimeout(() => {
@@ -62,7 +63,7 @@ class BotServer {
             channel.prefetch(1);
             return channel.assertQueue(this._options.requestQueueName).then(() => {
                 channel.consume(this._options.requestQueueName, this.processMessage.bind(this), { noAck: true });
-                console.log(`Ready to receive messages in the ${this._options.requestQueueName} queue.`);
+                logger.info(`Ready to receive messages in the ${this._options.requestQueueName} queue.`);
                 return channel;
             });
         });
@@ -70,7 +71,7 @@ class BotServer {
         let resChann = promiseConn.then((connection) => connection.createChannel()).then((channel) => {
             this._responseChannel = channel;
             return channel.assertQueue(this._options.responseQueueName).then(() => {
-                console.log(`Ready to send responses through the ${this._options.responseQueueName} queue.`);
+                logger.info(`Ready to send responses through the ${this._options.responseQueueName} queue.`);
                 return channel;
             });
         });
@@ -82,20 +83,22 @@ class BotServer {
 
     processMessage(message) {
         if (!this._ready) {
-            console.log('Server cannot receive requests or send responses at this time.');
+            logger.error('Message received but server cannot process requests or send responses at this time.');
             return;
         }
-        // FIXME: Use winston for logging.
-        console.log(`Message (corrId=${message.properties.correlationId}) received by the bot: `
-            + message.content.toString());
+
+        logger.info(`Message (corrId=${message.properties.correlationId}) received by the bot.`);
+        if (logger.debug) {
+            logger.debug(message.content.toString(), {corrId: message.properties.correlationId});
+        }
 
         let content = '';
         try {
             content = JSON.parse(message.content.toString());
         } catch (err) {
-            console.error('Error parsing message sent to bot.');
-            console.error(err);
-            this._sendResponse(BotServer._createErrorResponse('Error when deserializing message received by the bot.',
+            logger.error(`Error parsing message sent to bot (corrId=${message.properties.correlationId}).`);
+            logger.error(err);
+            this._sendResponse(BotServer._createErrorResponse('Message is not a valid JSON object string.',
                 'BOT01'), message.properties.correlationId);
             return;
         }
@@ -118,7 +121,7 @@ class BotServer {
         commandHandler(content.arg || null).then((responseObj) => {
             this._sendResponse(responseObj, message.properties.correlationId);
         }).catch((error) => {
-            console.error(error);
+            logger.error(error);
             if (error instanceof ApiError) {
                 this._sendResponse(BotServer._createErrorResponse(error.message, error.code),
                     message.properties.correlationId);
@@ -132,24 +135,24 @@ class BotServer {
 
     _sendResponse(content, correlationId) {
         if (!this._ready) {
-            console.log('Server cannot send responses at this time.');
+            logger.error('Server cannot send responses at this time.');
             return;
         }
 
-        // TODO: Delete this line when implementation is complete and with tests.
-        console.log(JSON.stringify(content), correlationId);
+        logger.info(`Sending response to message corrId=${correlationId}.`);
+        logger.debug && logger.debug(JSON.stringify(content), {corrId: correlationId});
 
         let response = null;
         try {
             response = JSON.stringify(content);
         } catch (err) {
-            console.error(`Could not serialize response for messageId=${correlationId}`);
-            console.error(err);
+            logger.error(`Could not serialize response for messageId=${correlationId}.`);
+            logger.error(err);
             response = BotServer._createErrorResponse('Non serializable response.', 'BOT01');
         }
 
         this._responseChannel.sendToQueue(this._options.responseQueueName,
-            Buffer.from(JSON.stringify(response), 'utf8'), {
+            Buffer.from(response, 'utf8'), {
                 contentType: 'application/json',
                 contentEncoding: 'UTF-8',
                 correlationId: correlationId
@@ -173,29 +176,29 @@ function start() {
         let reqChannel = null;
         let conn = amqp.connect('amqp://localhost').then((connection) => connection.createChannel())
             .then((channel) => {reqChannel = channel; return channel.assertQueue('bot_requests'); }).then((okData) => {
-                reqChannel.sendToQueue('bot_requests', Buffer.from(JSON.stringify({type: 'day_range', arg: 'AAPL'}), 'utf8'), {
+                reqChannel.sendToQueue('bot_requests', Buffer.from(JSON.stringify({type: 'day_range', arg: ['AAPL', 'APPL']}), 'utf8'), {
                     contentType: 'application/json',
                     contentEncoding: 'UTF-8',
                     correlationId: '465464-dfje546w4e31we65w464'
                 });
             });
     }).catch((err) => {
-        console.log(err);
+        logger.error(err);
         process.exit(1);
     });
 }
 
 // Setup global error handlers:
 process.on('uncaughtException', (err) => {
-    console.error('Uncaught error detected!', err);
+    logger.error('Uncaught error detected!', err);
     process.exit(1);
 });
 
 process.on('unhandledRejection', function (reason, promise) {
-    console.error('Unhandled rejection detected!', {reason, promise});
+    logger.error('Unhandled rejection detected!', {reason, promise});
 });
 
 if (require.main === module) {
-    console.log('Starting server process...');
+    logger.info('Starting server process...');
     start();
 }

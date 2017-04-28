@@ -4,9 +4,9 @@
 
 var util = require('util');
 var request = require('request-promise-native');
-var xml2js = require('xml2js');
 var et = require('elementtree');
 var ApiError = require('./errors').ApiError;
+var logger = require('./logging');
 
 
 const BOT_STOCK_URL = 'http://finance.yahoo.com/webservice/v1/symbols/%s/quote';
@@ -43,8 +43,7 @@ function stock(companyCode) {
         let resource = doc.findall('.//resource');
 
         if (resource.length === 0) {
-            // TODO: convert console.error to a debug using winston.
-            console.error('No resources found...: ' + response);
+            logger.debug && logger.debug('No resources found...: ' + response);
             throw new ApiError(`Could not find information for company ${companyCode}.`, 'BOT02');
         }
 
@@ -53,7 +52,8 @@ function stock(companyCode) {
         let priceField = element.findall('field[@name="price"]');
 
         if (nameField.length === 0 || priceField.length === 0) {
-            // TODO: convert console.error to a debug using winston, and send response text to log.
+            logger.debug && logger.debug(`Response for company ${companyCode} came without name or price fields.`,
+                response);
             throw new ApiError('Unexpected response from Yahoo Api.', 'BOT03');
         }
 
@@ -82,7 +82,7 @@ function dayRange(args) {
 
     let queryCode = null;
     if (args instanceof Array) {
-        queryCode = Array.join(args.map((item) => `"${item}"`));
+        queryCode = args.map((item) => `"${item}"`).join();
     } else {
         queryCode = `"${args}"`;
     }
@@ -106,6 +106,7 @@ function dayRange(args) {
         let quotes = doc.findall('.//quote');
 
         if (quotes.length === 0) {
+            logger.debug && logger.debug(`Could not find quotes tag in answer for company ${queryCode}: ` + response);
             throw new ApiError('Unexpected response from Yahoo Ranges API.', 'BOT03');
         }
 
@@ -122,8 +123,8 @@ function dayRange(args) {
                 let code = quote.attrib['symbol'];
 
                 if (!(companyName && daysLow && daysHigh && code)) {
-                    // TODO: Replace with logger.debug
-                    console.error(`Incomplete information from Yahoo Finance Ranges API: ${code} ${companyName} ${daysLow} ${daysHigh}`);
+                    logger.debug && logger.debug('Incomplete information from Yahoo Finance Ranges API: %s %s %s %s',
+                        code, companyName, daysLow, daysHigh);
                     results.push({error: true, message: `Could not find information for company ${code}.`});
                     continue;
                 }
@@ -132,10 +133,9 @@ function dayRange(args) {
                     'daysLow': parseFloat(daysLow), daysHigh: parseFloat(daysHigh),
                     'message': `${code} (${companyName}) Days Low quote is \$${daysLow} and Days High is \$${daysHigh}.`});
             } catch (err) {
-                // TODO: Replace with logger.debug
                 let message = `Error getting data for company ${quote.attrib.symbol || ''}`;
-                console.error(message);
-                console.error(err);
+                logger.error(message);
+                logger.error(err);
                 results.append({error: true, message});
             }
         }
