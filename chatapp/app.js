@@ -6,20 +6,28 @@ var path = require('path');
 
 var crypto = require('crypto');
 var express = require('express');
-var session = require('express-session');
+
+var bodyParser = require('body-parser');
+var cookieParser = require('cookie-parser');
 var nunjucks = require('nunjucks');
 var passport = require('passport');
+var session = require('express-session');
 var LocalStrategy = require('passport-local').Strategy;
 
 var logger = require('./logging');
 var router = require('./routes');
 
 var app = express();
+
 app.use(session({
     secret: crypto.createHash('md5').update(Math.random().toString()).digest('hex'),
-    resave: false,
+    resave: true,
     saveUninitialized: false
 }));
+
+// Important to make Passport work!
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
 
 nunjucks.configure(path.join(__dirname, 'templates'), {
     autoescape: true,
@@ -31,7 +39,7 @@ app.set('view engine', 'html');
 app.use(express.static(path.join(__dirname, 'assets')));
 
 // Create database schema
-var {knex, bookshelf} = require('./database/setup');
+var knex = require('./database/setup').knex;
 require('./database/schema')(knex);
 
 // Setup login authentication with passport.
@@ -39,14 +47,46 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 var User = require('./database/models').User;
-passport.use(new LocalStrategy(function(username, password, done) {
-    User.where('username', username).fetch().then((user) => {
-        console.log(user);
-    }).catch((err) => {
+passport.use('local', new LocalStrategy({
+    usernameField: 'username',
+    passwordField: 'password',
+    passReqToCallback: true
+}, function(req, username, password, done) {
+    User.where('username', username).fetch().then(user => {
+        if (user == null) {
+            done(null, false, 'Incorrect username or password.');
+            return;
+        }
+
+        if (user.checkPassword(password)) {
+            logger.debug(`Password for user ${username} accepted.`);
+            done(null, user);
+        } else {
+            logger.debug(`Password for user ${username} incorrect.`);
+            done(null, false, 'Incorrect username or password.');
+        }
+    }).catch(err => {
+        logger.error(`Error querying data for user ${username} from database.`);
         logger.error(err);
-    })
+        done(err);
+    });
 }));
 
+passport.serializeUser(function (user, done) {
+    done(null, user.get('username'));
+});
+
+passport.deserializeUser(function (username, done) {
+    User.where('username', username).fetch().then(user => {
+        if (!user) {
+            let message = `Session contains null user id ${username}!`;
+            logger.warn(message);
+            done(message);
+            return;
+        }
+        done(null, user);
+    });
+});
 
 // Load routes for the application
 app.use('/', router);

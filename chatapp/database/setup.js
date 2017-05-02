@@ -11,7 +11,8 @@ knex = knex({
     debug: process.env.LOG_LEVEL === 'debug',
     connection: {
         filename: path.join(__dirname, 'chatroom.sqlite3')
-    }
+    },
+    useNullAsDefault: true
 });
 
 bookshelf = bookshelf(knex);

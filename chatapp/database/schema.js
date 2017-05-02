@@ -11,16 +11,14 @@ function createSchema(knex) {
         // Passwords are sha-256 hashed, with a 8 character salt.
         table.string('password', 74);
         table.string('full_name', 100);
-        logger.info(' > Created users table.');
-    });
+    }).then();
 
     knex.schema.createTableIfNotExists('messages', (table) => {
         table.increments().primary();
         table.string('username', 50).references('users.username');
         table.dateTime('date_posted');
         table.text('text');
-        logger.info(' > Created messages table.');
-    });
+    }).then();
 }
 
 module.exports = createSchema;
