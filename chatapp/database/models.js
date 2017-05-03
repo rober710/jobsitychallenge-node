@@ -9,7 +9,7 @@ var PasswordManager = require('../util').PasswordManager;
 var User = bookshelf.Model.extend({
     tableName: 'users',
     messages: function () {
-        return this.hasMany(Message)
+        return this.hasMany(Message, 'username', 'username')
     },
 
     /**
@@ -38,7 +38,17 @@ var User = bookshelf.Model.extend({
 var Message = bookshelf.Model.extend({
     tableName: 'messages',
     user: function () {
-        return this.belongsTo(User)
+        return this.belongsTo(User, 'username', 'username')
+    },
+    toJSON() {
+        return this.related('user').fetch().then(user => {
+            return JSON.stringify({
+                'text': this.get('text'),
+                'user': {'id': this.get('username'), 'username': user.get('full_name')},
+                'timestamp': this.get('date_posted').toISOString(),
+                'type': 'message'
+            })
+        });
     }
 });
 

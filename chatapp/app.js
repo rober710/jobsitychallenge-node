@@ -14,6 +14,7 @@ var passport = require('passport');
 var session = require('express-session');
 var LocalStrategy = require('passport-local').Strategy;
 
+var BotMessageManager = require('./bot-connector').BotMessageManager;
 var logger = require('./logging');
 var router = require('./routes');
 
@@ -91,11 +92,31 @@ passport.deserializeUser(function (username, done) {
 // Load routes for the application
 app.use('/', router);
 
+// Global error handlers:
+process.on('uncaughtException', (err) => {
+    logger.error('Uncaught error detected!', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', function (reason, promise) {
+    logger.error('Unhandled rejection detected!', {reason, promise});
+});
+
 let port = parseInt(process.env.PORT);
 if (isNaN(port)) {
     port = 3000;
 }
 
-app.listen(port, function () {
-    logger.info(`Server started. Listening on port ${port}.`);
+// Initialize bot receiver. When it is ready to listen to requests, the server starts listening to requests.
+let messageManager = new BotMessageManager();
+app.locals.botMessageManager = messageManager;
+
+messageManager.initialize().then(() => {
+    logger.info('Bot message receiver initialized. Starting server...');
+    app.listen(port, function () {
+        logger.info(`Server started. Listening on port ${port}.`);
+    });
+}).catch(err => {
+    logger.error(err);
+    process.exit(1);
 });

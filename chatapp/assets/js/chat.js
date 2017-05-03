@@ -47,7 +47,7 @@ var Chat = {
                 thisInstance.$textarea.val('');
             }
             // Activar el timer que consulta al servidor por mensajes nuevos.
-            thisInstance.updatesTimer = setInterval($.proxy(thisInstance.getUpdates, thisInstance), 1000);
+            //thisInstance.updatesTimer = setInterval($.proxy(thisInstance.getUpdates, thisInstance), 1000);
         }).fail(function(jqxhr) {
             if (jqxhr.responseJSON && jqxhr.responseJSON.message) {
                 thisInstance.$extraMsg.text(jqxhr.responseJSON.message);
@@ -55,8 +55,8 @@ var Chat = {
             thisInstance.$textarea.val('');
         });
 
-        this.getOnlineUsers();
-        this.updateOnlineTimer = setInterval($.proxy(this.getOnlineUsers, this), 5000)
+        //this.getOnlineUsers();
+        //this.updateOnlineTimer = setInterval($.proxy(this.getOnlineUsers, this), 5000)
     },
 
     getUpdates: function() {
@@ -175,9 +175,6 @@ var Chat = {
             url: this.$textarea.attr('data-ajax-url'),
             type: 'POST',
             dataType: 'json',
-            headers: {
-                'X-CSRFToken': $.cookie('csrftoken')
-            },
             data: {
                 message: this.$textarea.val().trim()
             }

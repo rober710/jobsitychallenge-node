@@ -172,18 +172,7 @@ class BotServer {
 var server = new BotServer();
 
 function start() {
-    server.initialize().then(() => {
-        // Temp code to test sending messages through RabbitMQ.
-        let reqChannel = null;
-        let conn = amqp.connect('amqp://localhost').then((connection) => connection.createChannel())
-            .then((channel) => {reqChannel = channel; return channel.assertQueue('bot_requests'); }).then((okData) => {
-                reqChannel.sendToQueue('bot_requests', Buffer.from(JSON.stringify({type: 'day_range', arg: ['AAPL', 'APPL']}), 'utf8'), {
-                    contentType: 'application/json',
-                    contentEncoding: 'UTF-8',
-                    correlationId: '465464-dfje546w4e31we65w464'
-                });
-            });
-    }).catch((err) => {
+    server.initialize().catch(err => {
         logger.error(err);
         process.exit(1);
     });

@@ -19,6 +19,11 @@ class ApiError extends ExtendableError {
         super(message);
         this.code = code;
         this.cause = cause;
+
+        // Taken from: http://stackoverflow.com/questions/25763837/how-to-specify-a-caused-by-in-a-javascript-error
+        if (cause !== null && cause.stack) {
+            this.stack += '\nCaused by: ' + cause.stack;
+        }
     }
 }
 
