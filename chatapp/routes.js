@@ -6,10 +6,102 @@ var express = require('express');
 var HttpStatus = require('http-status-codes');
 var passport = require('passport');
 var router = express.Router();
+var WebSocket = require('ws');
 
 var commandRegistry = require('./commands');
 var Message = require('./database/models').Message;
 var logger = require('./logging');
+
+// Websocket Message processors
+var processors = {
+    'chat': function (websocketInstance, req, message) {
+        const COMMAND_REGEX = /^\/(\w+)(?:=(.*))?$/;
+        let regexMatch = COMMAND_REGEX.exec(message.text);
+        if (regexMatch) {
+            let command = regexMatch[1];
+            let arg = regexMatch[2];
+
+            let handler = commandRegistry[command];
+
+            if (!handler) {
+                websocketInstance.send(JSON.stringify({
+                    'error': true, 'code': 'CH01',
+                    'message': `Command "${command}" not recognized.`
+                }));
+                return;
+            }
+
+            let connector = req.app.locals.botMessageManager;
+            handler(connector, arg).then(response => {
+                websocketInstance.send(JSON.stringify(response));
+            }, err => {
+                logger.error(err);
+                let content = null;
+
+                try {
+                    content = JSON.stringify(err);
+                } catch (err) {
+                    logger.error(err);
+                    content = JSON.stringify({
+                        'error': true, 'code': 'CH01',
+                        'message': 'Could not convert response to JSON to send to the client.'
+                    });
+                }
+
+                websocketInstance.send(content);
+            });
+            return;
+        }
+
+        // Save message in database and publish it to the chatroom.
+        let messageObj = new Message({
+            id: null,
+            username: req.user.get('username'),
+            date_posted: new Date(),
+            text: message.text
+        });
+
+        messageObj.save().then(message => {
+            message.toJSONObject().then(jsonObj => {
+                // Send message to all clients
+                let clients = req.app.webSocketServer.clients;
+                let response = JSON.stringify({
+                    type: 'chat',
+                    error: false,
+                    message: jsonObj
+                });
+
+                for (let client of clients) {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(response);
+                    }
+                }
+            }).catch(err => {
+                logger.error('Error serializing message to JSON.');
+                logger.error(err);
+
+                // Just inform the client who wrote the message.
+                let response = {
+                    error: true,
+                    code: 'CH02',
+                    message: 'Error sending message.'
+                };
+
+                websocketInstance.send(JSON.stringify(response));
+            });
+        }).catch(err => {
+            logger.error('Could not save message to the database.');
+            logger.error(err);
+            let response = {
+                error: true,
+                code: 'CH02',
+                message: 'Error saving message to the database.'
+            };
+
+            websocketInstance.send(JSON.stringify(response));
+        });
+    }
+};
 
 function setupRoutes(app) {
     router.get('/', function(req, res) {
@@ -64,13 +156,55 @@ function setupRoutes(app) {
             return;
         }
 
-        res.render('chat');
+        res.render('chat', {
+            user: req.user
+        });
     });
 
     // Web Socket endpoint
-    app.ws('/messages', function (websocket, req) {
-        websocket.on('message', function (message) {
-            console.log(message);
+    app.ws('/messages', function (websocketInstance, req) {
+        websocketInstance.on('message', function (message) {
+            // TODO: Verify user session.
+            if (!message) {
+                websocketInstance.send(JSON.stringify({
+                    error: true, code: 'CH01',
+                    message: 'Empty message'
+                }));
+                return;
+            }
+
+            try {
+                message = JSON.parse(message);
+            } catch (err) {
+                logger.error(err);
+                websocketInstance.send(JSON.stringify({
+                    error: true, code: 'CH01',
+                    message: 'Message is not a valid JSON string.'
+                }));
+                return;
+            }
+
+            // A message should contain a type, which lets the server know how to handle the message.
+            if (!message.type) {
+                websocketInstance.send(JSON.stringify({
+                    error: true, code: 'CH01',
+                    message: 'Message does not have a type.'
+                }));
+                return;
+            }
+
+            let processor = processors[message.type];
+            if (!processor) {
+                let errMsg = `Unknown message type: ${message.type}.`;
+                logger.error(errMsg, message);
+                websocketInstance.send(JSON.stringify({
+                    error: true, code: 'CH01',
+                    message: errMsg
+                }));
+                return;
+            }
+
+            processor(websocketInstance, req, message);
         });
     });
 

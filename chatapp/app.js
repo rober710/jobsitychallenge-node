@@ -89,17 +89,19 @@ passport.deserializeUser(function (username, done) {
 });
 
 // Enable Web Socket support for app.
-ws(app, null, {
+let wsRet = ws(app, null, {
     wsOptions: {
         verifyClient: function (info, done) {
             console.log(info, info.origin, info.secure);
             sessionManager(info.req, {}, function () {
                 console.log(info.req.session);
             });
-            done(false, 403, 'Err');
+            done(true);
         }
     }
 });
+
+app.webSocketServer = wsRet.getWss();
 
 // Load routes for the application
 require('./routes')(app);

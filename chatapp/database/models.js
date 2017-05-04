@@ -40,14 +40,13 @@ var Message = bookshelf.Model.extend({
     user: function () {
         return this.belongsTo(User, 'username', 'username')
     },
-    toJSON() {
+    toJSONObject() {
         return this.related('user').fetch().then(user => {
-            return JSON.stringify({
+            return {
                 'text': this.get('text'),
                 'user': {'id': this.get('username'), 'username': user.get('full_name')},
-                'timestamp': this.get('date_posted').toISOString(),
-                'type': 'message'
-            })
+                'timestamp': this.get('date_posted').toISOString()
+            };
         });
     }
 });

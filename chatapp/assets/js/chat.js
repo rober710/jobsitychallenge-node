@@ -4,30 +4,47 @@ var Chat = {
     messageToSend: '',
 
     init: function() {
-        this.cacheDOM();
-        this.bindEvents();
-        this.render();
-    },
-
-    cacheDOM: function() {
         this.$chatHistory = $('.chat-history');
         this.$button = $('button');
         this.$textarea = $('#message-to-send');
         this.$chatHistoryList = this.$chatHistory.find('ul');
         this.$extraMsg = $('#extra-msg');
         this.$userList = $('#user-list');
-        this.myUserId = parseInt($('#user_id').val());
+        this.myUserId = $('#user_id').val();
         this.messagesUrl = $('#messages_url').val();
         this.updatesUrl = $('#updates_url').val();
         this.onlineUrl = $('#online_url').val();
         this.lastTimestamp = null;
         this.updatesTimer = null;
         this.updateOnlineTimer = null;
-    },
 
-    bindEvents: function() {
-        this.$button.on('click', this.sendMessage.bind(this));
-        this.$textarea.on('keyup', this.sendMessageEnter.bind(this));
+        var location = window.location.host;
+        var scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        var that = this;
+
+        this._ws = new WebSocket(scheme + location + '/messages', 'json');
+        this._ws.addEventListener('open', function (e) {
+            that._ready = true;
+            that._ws.addEventListener('message', $.proxy(that._handleWsMessage, that));
+        });
+        this._ws.addEventListener('close', function (code, reason, wasClean) {
+            // TODO: try to reconnect?
+            that._ready = false;
+            console && console.log('Server connection closed.', code, reason);
+        });
+        this._ws.addEventListener('error', function (e) {
+            console && console.error(e);
+        });
+
+        this.$button.on('click', $.proxy(this.sendMessage, this));
+        this.$textarea.on('keyup', function (event) {
+            if (event.keyCode === 13) {
+                // enter was pressed
+                that.sendMessage();
+            }
+        });
+
+        this.render();
     },
 
     render: function() {
@@ -91,12 +108,10 @@ var Chat = {
     },
 
     renderMessage: function(messageInfo) {
-        if (messageInfo.type == 'message') {
-            var item = this._createMessageMarkup(messageInfo);
-            this.$chatHistoryList.append(item);
-            this.scrollToBottom();
-            this.lastTimestamp = messageInfo.timestamp;
-        }
+        var item = this._createMessageMarkup(messageInfo);
+        this.$chatHistoryList.append(item);
+        this.scrollToBottom();
+        this.lastTimestamp = messageInfo.timestamp;
         this.$textarea.val('');
     },
 
@@ -169,56 +184,77 @@ var Chat = {
         return item;
     },
 
+    /**
+     * Sends the contents of the textarea to the server.
+     */
     sendMessage: function() {
-        var thisInstance = this;
-        $.ajax({
-            url: this.$textarea.attr('data-ajax-url'),
-            type: 'POST',
-            dataType: 'json',
-            data: {
-                message: this.$textarea.val().trim()
-            }
-        }).done($.proxy(this.renderMessage, this)).fail(function(jqxhr) {
-            if (jqxhr.responseJSON && jqxhr.responseJSON.message) {
-                thisInstance.$extraMsg.text(jqxhr.responseJSON.message);
-            }
-        });
-        thisInstance.$textarea.val('');
+        if (!this._ready) {
+            console && console.log('Cannot send message because websocket is not ready.');
+            return;
+        }
+
+        var text = this.$textarea.val().trim();
+
+        if (!text) {
+            return;
+        }
+
+        this._ws.send(JSON.stringify({
+            type: 'chat',
+            text: text
+        }));
+
+        this.$textarea.val('');
         this.$extraMsg.empty();
     },
 
-    sendMessageEnter: function(event) {
-        // enter was pressed
-        if (event.keyCode === 13) {
-            this.sendMessage();
+    /**
+     * Handles a message received from the websocket.
+     * @param e MessageEvent containing information about the message as well as its data.
+     * @private
+     */
+    _handleWsMessage(e) {
+        let data = e.data;
+        // data is always assumed to be a JSON string.
+        try {
+            data = JSON.parse(data);
+        } catch (err) {
+            console && console.error(err);
+            this.$extraMsg.text('Could not read response from server!');
+            return;
+        }
+
+        if (data.error) {
+            if (data.message) {
+                this.$extraMsg.text(data.message);
+            } else {
+                this.$extraMsg.text('Unexpected error on message received from server.');
+            }
+
+            console && console.error(data);
+            return;
+        } else if (!data.type) {
+            console && console.error('Unexpected response format');
+            return;
+        }
+
+        switch (data.type) {
+            case 'chat':
+            case 'command':
+                this.renderMessage(data.message);
+                break;
+            default:
+                console && console.warn('Unexpected message type: ' + data.type);
         }
     },
 
     scrollToBottom: function() {
         this.$chatHistory.scrollTop(this.$chatHistory[0].scrollHeight);
-    },
-
-    getCurrentTime: function() {
-        return new Date().toLocaleTimeString().replace(/([\d]+:[\d]{2})(:[\d]{2})(.*)/, "$1$3");
-    },
-
-    getRandomItem: function(arr) {
-        return arr[Math.floor(Math.random() * arr.length)];
     }
-
 };
 
 $(function() {
     Chat.init();
-    var location = window.location.host;
-    var scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-
-    Chat.ws = new WebSocket(scheme + location + '/messages', 'json');
-
-    Chat.ws.addEventListener('open', function (e) {
-        console.log('Socket opened');
-        Chat.ws.send(JSON.stringify({text: 'Hola'}));
-    });
 
     var searchFilter = {
         options: {valueNames: ['name']},

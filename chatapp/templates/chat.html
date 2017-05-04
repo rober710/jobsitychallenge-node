@@ -26,14 +26,14 @@
             <img src="img/user_avatar.png" alt="avatar"/>
 
             <div class="chat-about">
-                <div class="chat-with">{{ user.get_full_name }}</div>
+                <div class="chat-with">{{ user.get('full_name') }}</div>
             </div>
             <a href="/logout">Log out</a>
         </div> <!-- end Chat-header -->
 
         <div class="chat-history">
             <!-- Chat control fields -->
-            <input type="hidden" name="user_id" id="user_id" value="{{ user.id }}"/>
+            <input type="hidden" name="user_id" id="user_id" value="{{ user.get('username') }}"/>
             <input type="hidden" name="messages_url" id="messages_url" value="/messages/list"/>
             <input type="hidden" name="updates_url" id="updates_url" value="/messages/updates"/>
             <input type="hidden" name="online_url" id="online_url" value="/misc/onlineusers"/>
