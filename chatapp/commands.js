@@ -35,16 +35,15 @@ function dayRange(connector, arg) {
         let results = response.results;
         let messages = [];
 
-        for (result of results) {
+        for (let result of results) {
             if (result.error) {
                 messages.push({
-                    text: result.message, user: {id: 0, username: 'Bot'}, type: 'command',
+                    text: result.message, user: {id: 0, username: 'Bot'},
                     timestamp: new Date().toISOString(), error: true
                 });
             } else {
                 messages.push({
-                    text: result.message, user: {id: 0, username: 'Bot'},
-                    type: 'command', error: False,
+                    text: result.message, user: {id: 0, username: 'Bot'}, error: false,
                     timestamp: new Date().toISOString()
                 });
             }
@@ -55,5 +54,6 @@ function dayRange(connector, arg) {
 }
 
 module.exports = {
-    stock
+    stock,
+    'day_range': dayRange
 };

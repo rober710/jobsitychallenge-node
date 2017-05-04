@@ -33,7 +33,12 @@ var processors = {
 
             let connector = req.app.locals.botMessageManager;
             handler(connector, arg).then(response => {
-                websocketInstance.send(JSON.stringify(response));
+                let resObj = {
+                    error: false,
+                    result: response,
+                    type: 'command'
+                };
+                websocketInstance.send(JSON.stringify(resObj));
             }, err => {
                 logger.error(err);
                 let content = null;
@@ -43,8 +48,8 @@ var processors = {
                 } catch (err) {
                     logger.error(err);
                     content = JSON.stringify({
-                        'error': true, 'code': 'CH01',
-                        'message': 'Could not convert response to JSON to send to the client.'
+                        error: true, code: 'CH01',
+                        message: 'Could not convert response to JSON to send to the client.'
                     });
                 }
 

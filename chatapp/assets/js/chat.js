@@ -115,6 +115,18 @@ var Chat = {
         this.$textarea.val('');
     },
 
+    _renderCommandResponse(result) {
+        if ($.isArray(result)) {
+            for (var i = 0; i < result.length; i++) {
+                var message = result[i];
+                this.$chatHistoryList.append(this._createMessageMarkup(message));
+            }
+            this.scrollToBottom();
+        } else {
+            console && console.error('Unexpected command result format.', result);
+        }
+    },
+
     getOnlineUsers: function() {
         var thisInstance = this;
         $.ajax({
@@ -240,8 +252,10 @@ var Chat = {
 
         switch (data.type) {
             case 'chat':
-            case 'command':
                 this.renderMessage(data.message);
+                break;
+            case 'command':
+                this._renderCommandResponse(data.result);
                 break;
             default:
                 console && console.warn('Unexpected message type: ' + data.type);
