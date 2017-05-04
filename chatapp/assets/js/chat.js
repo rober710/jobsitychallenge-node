@@ -210,6 +210,15 @@ var Chat = {
 
 $(function() {
     Chat.init();
+    var location = window.location.host;
+    var scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+
+    Chat.ws = new WebSocket(scheme + location + '/messages', 'json');
+
+    Chat.ws.addEventListener('open', function (e) {
+        console.log('Socket opened');
+        Chat.ws.send(JSON.stringify({text: 'Hola'}));
+    });
 
     var searchFilter = {
         options: {valueNames: ['name']},

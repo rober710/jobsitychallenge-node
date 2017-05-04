@@ -4,27 +4,26 @@
 
 var path = require('path');
 
+var bodyParser = require('body-parser');
 var crypto = require('crypto');
 var express = require('express');
-
-var bodyParser = require('body-parser');
-var cookieParser = require('cookie-parser');
+var LocalStrategy = require('passport-local').Strategy;
 var nunjucks = require('nunjucks');
 var passport = require('passport');
 var session = require('express-session');
-var LocalStrategy = require('passport-local').Strategy;
+var ws = require('express-ws');
 
 var BotMessageManager = require('./bot-connector').BotMessageManager;
 var logger = require('./logging');
-var router = require('./routes');
 
 var app = express();
-
-app.use(session({
+var sessionManager = session({
     secret: crypto.createHash('md5').update(Math.random().toString()).digest('hex'),
     resave: true,
     saveUninitialized: false
-}));
+});
+
+app.use(sessionManager);
 
 // Important to make Passport work!
 app.use(bodyParser.json());
@@ -89,8 +88,21 @@ passport.deserializeUser(function (username, done) {
     });
 });
 
+// Enable Web Socket support for app.
+ws(app, null, {
+    wsOptions: {
+        verifyClient: function (info, done) {
+            console.log(info, info.origin, info.secure);
+            sessionManager(info.req, {}, function () {
+                console.log(info.req.session);
+            });
+            done(false, 403, 'Err');
+        }
+    }
+});
+
 // Load routes for the application
-app.use('/', router);
+require('./routes')(app);
 
 // Global error handlers:
 process.on('uncaughtException', (err) => {

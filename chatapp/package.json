@@ -21,6 +21,7 @@
     "cookie-parser": "^1.4.3",
     "express": "^4.15.2",
     "express-session": "^1.15.2",
+    "express-ws": "^3.0.0",
     "http-status-codes": "^1.1.6",
     "knex": "^0.12.9",
     "nunjucks": "^3.0.0",
