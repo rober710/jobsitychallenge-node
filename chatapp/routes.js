@@ -11,6 +11,7 @@ var WebSocket = require('ws');
 var commandRegistry = require('./commands');
 var Message = require('./database/models').Message;
 var logger = require('./logging');
+var User = require('./database/models').User;
 
 // Websocket Message processors
 var processors = {
@@ -214,110 +215,53 @@ function setupRoutes(app) {
     });
 
     // Ajax routes
-    router.post('/messages/post', function (req, res, next) {
+    router.get('/misc/onlineusers', function (req, res, next) {
         if (!req.user) {
             res.status(HttpStatus.FORBIDDEN);
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             res.write(JSON.stringify({
-                'error': true, 'code': 'CH01',
-                'message': 'User is not in session.'
+                error: true, code: 'CH01',
+                message: 'User is not in session.'
             }));
             res.end();
-        }
-
-        const COMMAND_REGEX = /^\/(\w+)(?:=(.*))?$/;
-        let postedMessage = req.body.message;
-
-        if (!postedMessage) {
-            res.status(HttpStatus.BAD_REQUEST);
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.write(JSON.stringify({
-                'error': true, 'code': 'CH01',
-                'message': 'Parameter "message" was not send or was empty.'
-            }));
-            res.end();
-        }
-
-        let regexMatch = COMMAND_REGEX.exec(postedMessage);
-        if (regexMatch) {
-            let command = regexMatch[1];
-            let arg = regexMatch[2];
-
-            let handler = commandRegistry[command];
-
-            if (!handler) {
-                res.status(HttpStatus.BAD_REQUEST);
-                res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.write(JSON.stringify({
-                    'error': true, 'code': 'CH01',
-                    'message': `Command "${command}" not recognized.`
-                }));
-                res.end();
-                return;
-            }
-
-            let connector = req.app.locals.botMessageManager;
-            handler(connector, arg).then(response => {
-                res.status(HttpStatus.OK);
-                res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.write(JSON.stringify(response));
-                res.end();
-            }, err => {
-                let content = null;
-
-                try {
-                    content = JSON.stringify(err);
-                } catch (err) {
-                    logger.error(err);
-                    content = JSON.stringify({
-                        'error': true, 'code': 'CH01',
-                        'message': 'Could not convert response to JSON to send to the client.'
-                    });
-                }
-
-                res.status(HttpStatus.INTERNAL_SERVER_ERROR);
-                res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.write(content);
-                res.end();
-            });
             return;
         }
 
-        // Save message in database and publish it to the chatroom.
-        let messageObj = new Message({
-            id: null,
-            username: req.user.get('username'),
-            date_posted: new Date(),
-            text: postedMessage
-        });
+        let store = req.sessionStore;
+        let userIds = [];
 
-        messageObj.save().then(message => {
-            message.toJSON().then(jsonStr => {
+        store.all((err, sessions) => {
+            for (let key in sessions) {
+                // Object does not have Object.prototype in prototype chain!
+                if (Object.prototype.hasOwnProperty.call(sessions, key)
+                        && sessions[key].passport.user !== req.user.get('username')) {
+                    userIds.push(sessions[key].passport.user);
+                }
+            }
+
+            // Query the database for the full names of the users in session.
+            User.forge().where('username', 'in', userIds).fetchAll().then(results => {
+                let users = results.map((item, index) => {
+                    return {
+                        id: item.get('username'),
+                        name: item.get('full_name')
+                    };
+                });
                 res.status(HttpStatus.OK);
                 res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.write(jsonStr);
+                res.write(JSON.stringify(users));
                 res.end();
-            }).catch(err => {
-                logger.error('Error serializing message to JSON.');
+            }, err => {
                 logger.error(err);
+                let response = JSON.stringify({
+                    error: true, code: 'CH02',
+                    message: 'Error getting users in session.'
+                });
                 res.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                res.write(JSON.stringify({
-                    'error': true, 'code': 'CH02',
-                    'message': 'Error converting message to JSON.'
-                }));
+                res.write(response);
                 res.end();
             });
-        }).catch(err => {
-            logger.error('Could not save message to the database.');
-            logger.error(err);
-            res.status(HttpStatus.INTERNAL_SERVER_ERROR);
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.write(JSON.stringify({
-                'error': true, 'code': 'CH02',
-                'message': 'Error saving message to the database.'
-            }));
-            res.end();
         });
     });
 

@@ -72,8 +72,7 @@ var Chat = {
             thisInstance.$textarea.val('');
         });
 
-        //this.getOnlineUsers();
-        //this.updateOnlineTimer = setInterval($.proxy(this.getOnlineUsers, this), 5000)
+        this.getOnlineUsers();
     },
 
     getUpdates: function() {
@@ -184,7 +183,7 @@ var Chat = {
     _createOnlineUserEntry: function(onlineUserInfo) {
         var item = $('<li/>').addClass('clearfix');
         item.append($('<img/>').attr({
-            src: '/assets/img/user_avatar.png',
+            src: '/img/user_avatar.png',
             alt: onlineUserInfo.name
         }));
         var about = $('<div/>').addClass('about');
