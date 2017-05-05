@@ -127,7 +127,7 @@ app.locals.botMessageManager = messageManager;
 
 messageManager.initialize().then(() => {
     logger.info('Bot message receiver initialized. Starting server...');
-    app.listen(port, function () {
+    app.listen(port, function() {
         logger.info(`Server started. Listening on port ${port}.`);
     });
 }).catch(err => {

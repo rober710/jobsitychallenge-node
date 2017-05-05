@@ -225,7 +225,7 @@ var Chat = {
      * @private
      */
     _handleWsMessage(e) {
-        let data = e.data;
+        var data = e.data;
         // data is always assumed to be a JSON string.
         try {
             data = JSON.parse(data);
